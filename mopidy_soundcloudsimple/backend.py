@@ -11,6 +11,8 @@ scs_uri_root=scs_uri+'root'
 scs_uri_user=scs_uri+'user'
 scs_uri_stream=scs_uri+'stream'
 sc_api='https://api-v2.soundcloud.com'
+imageSelector='t500x500.jpg'
+limit=100
 
 class SoundcloudSimpleBackend(pykka.ThreadingActor, Backend):
     uri_schemes = [u'soundcloudsimple']
@@ -43,7 +45,7 @@ class SoundcloudSimpleLibrary(LibraryProvider):
         streamUri = scs_uri_stream
         ref = Ref.album(name='_Stream', uri=streamUri)
         imguri = jsono['avatar_url']
-        imguri = imguri.replace("large.jpg", "t500x500.jpg")
+        imguri = imguri.replace("large.jpg", imageSelector)
         self.imageCache[streamUri] = Image(uri=imguri)
         refs.append(ref)        
         
@@ -54,12 +56,12 @@ class SoundcloudSimpleLibrary(LibraryProvider):
           followingUri = scs_uri_user + str(follow['id'])
           ref = Ref.album(name=follow['username'], uri=followingUri)
           imguri = follow['avatar_url']
-          imguri = imguri.replace("large.jpg", "t500x500.jpg")
+          imguri = imguri.replace("large.jpg", imageSelector)
           self.imageCache[followingUri] = Image(uri=imguri)
           refs.append(ref)
 
       elif uri==scs_uri_stream:
-        payload = {'limit': '100', 'oauth_token': self.auth_token}
+        payload = {'limit': limit, 'oauth_token': self.auth_token}
         r =requests.get(sc_api + '/stream', params=payload, timeout=10)
         jsono = json.loads(r.text)
         trackNo = 0
@@ -75,7 +77,7 @@ class SoundcloudSimpleLibrary(LibraryProvider):
         
       else:
         account = uri.strip(scs_uri_user)
-        payload = {'limit': '100', 'client_id': self.clientId}
+        payload = {'limit': limit, 'client_id': self.clientId}
         r =requests.get(sc_api + '/users/' + account + '/tracks', params=payload, timeout=10)
         jsono = json.loads(r.text)
         trackNo = 0
@@ -103,7 +105,7 @@ class SoundcloudSimpleLibrary(LibraryProvider):
     def getTrackFromJSON(self, trackJSON, trackNo, trackuri):
       if (trackJSON['artwork_url']):
         artwork = trackJSON['artwork_url']
-        artwork = artwork.replace("large.jpg", "t500x500.jpg")
+        artwork = artwork.replace("large.jpg", imageSelector)
         self.imageCache[trackuri] = Image(uri=artwork)
       album = Album(name=trackJSON['user']['username'])
       artist = Artist(uri='none',name=trackJSON['user']['username'])
@@ -117,7 +119,6 @@ class SoundcloudSimpleLibrary(LibraryProvider):
       return
 
     def lookup(self, uri, uris=None):
-      logger.info("lookup: " + uri)
       if uri in self.trackCache:
         track=self.trackCache[uri]
         return [track]
