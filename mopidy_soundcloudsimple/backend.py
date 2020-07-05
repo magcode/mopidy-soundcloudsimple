@@ -9,10 +9,11 @@ logger = logging.getLogger(__name__)
 scs_uri='soundcloudsimple:'
 scs_uri_root=scs_uri+'root'
 scs_uri_user=scs_uri+'user'
-scs_uri_stream=scs_uri+'stream'
+scs_uri_stream=scs_uri+'stream:'
 sc_api='https://api-v2.soundcloud.com'
 imageSelector='t500x500.jpg'
 limit=100
+myStreamLabel='   My Stream'
 
 class SoundcloudSimpleBackend(pykka.ThreadingActor, Backend):
     uri_schemes = [u'soundcloudsimple']
@@ -20,8 +21,9 @@ class SoundcloudSimpleBackend(pykka.ThreadingActor, Backend):
     # used uris:
     # soundcloudsimple:root (shows entry point for stream and users followed
     # soundcloudsimple:user<userid> (shows tracks for a followed user)    
-    # soundcloudsimple:stream (shows personal stream)
-    # soundcloudsimple:http....... (the track streaming url)    
+    # soundcloudsimple:stream: (shows personal stream)
+    # soundcloudsimple:stream: http   (the track streaming url in the personal stream)
+    # soundcloudsimple:http....... (the track streaming url)
  
     def __init__(self, config, audio):
         super(SoundcloudSimpleBackend, self).__init__()        
@@ -78,7 +80,7 @@ class SoundcloudSimpleLibrary(LibraryProvider):
       
       # get stream
       streamUri = scs_uri_stream
-      ref = Ref.album(name='_Stream', uri=streamUri)
+      ref = Ref.album(name=myStreamLabel, uri=streamUri)
       imguri = jsono['avatar_url']
       imguri = imguri.replace("large.jpg", imageSelector)
       self.imageCache[streamUri] = Image(uri=imguri)
@@ -96,8 +98,7 @@ class SoundcloudSimpleLibrary(LibraryProvider):
         self.imageCache[followingUri] = Image(uri=imguri)
         refs.append(ref)
       self.refCache[scs_uri_root] = refs
-      return refs
-      
+      return refs      
       
     def loadTrackRefsFromStream(self):
       refs=[]
@@ -110,8 +111,8 @@ class SoundcloudSimpleLibrary(LibraryProvider):
         if 'track' in p:
           trackNo += 1
           trackJSON = p['track']
-          streamUrl = self.getMediaFromJSON(trackJSON['media'])
-          trackRef = self.getTrackRefFromJSON(streamUrl, trackJSON)
+          audioStreamUrl = self.getMediaFromJSON(trackJSON['media'])
+          trackRef = Ref.track(name=trackJSON['title'], uri=scs_uri_stream + audioStreamUrl)          
           refs.append(trackRef)
           track = self.getTrackFromJSON(trackJSON, trackNo, trackRef.uri)
           self.trackCache[trackRef.uri] = track
@@ -184,6 +185,7 @@ class SoundcloudSimpleLibrary(LibraryProvider):
 class SoundcloudSimplePlaybackProvider(PlaybackProvider):
     def translate_uri(self, uri):
       streamUrl = uri.lstrip(scs_uri)
+      streamUrl = streamUrl.lstrip(scs_uri_stream)
       r =requests.get(streamUrl)
       jsono = json.loads(r.text)
       return jsono['url']
