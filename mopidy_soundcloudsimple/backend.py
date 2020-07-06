@@ -87,6 +87,7 @@ class SoundcloudSimpleLibrary(LibraryProvider):
       refs.append(ref)        
       
       # get followings
+      payload = {'oauth_token': self.auth_token, 'limit' : limit}
       r =requests.get(sc_api + '/users/' + str(userid) + '/followings', params=payload, timeout=10)
       logger.info("Loading followings for user " + str(userid))
       jsono = json.loads(r.text)
