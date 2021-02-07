@@ -2,6 +2,7 @@ import logging
 import json
 import pykka
 import requests
+from datetime import datetime
 from mopidy.models import Ref,Track,Album,Image,Artist
 from mopidy.backend import *
 
@@ -40,8 +41,18 @@ class SoundcloudSimpleLibrary(LibraryProvider):
         self.refCache = {}
         self.auth_token = config['soundcloudsimple']['auth_token']
         self.clientId = config['soundcloudsimple']['client_id']
+        self.userId = config['soundcloudsimple']['user_id']
+        self.lastRefresh = datetime.now()
  
-    def browse(self, uri):    
+    def browse(self, uri):
+      refs=[]
+      now = datetime.now()
+      minutesSinceLastLoad = round(abs(now-self.lastRefresh).seconds / 60)
+      # cache one day
+      if (minutesSinceLastLoad>1440):
+          self.refresh('')
+          self.lastRefresh = now
+      
       refs=[]
       
       # root
@@ -72,13 +83,12 @@ class SoundcloudSimpleLibrary(LibraryProvider):
 
     def loadRootAlbumRefs(self):
       refs=[]
-      # get the user id
-      payload = {'oauth_token': self.auth_token}
-      r =requests.get(sc_api + '/me', params=payload, timeout=10)
+      # get the user details
+      payload = {'client_id': self.clientId}
+      r =requests.get(sc_api + '/users/' + self.userId, params=payload, timeout=10)
       jsono = json.loads(r.text)
-      userid = jsono['id']
       
-      # get stream
+      # get stream node
       streamUri = scs_uri_stream
       ref = Ref.album(name=myStreamLabel, uri=streamUri)
       imguri = jsono['avatar_url']
@@ -87,10 +97,12 @@ class SoundcloudSimpleLibrary(LibraryProvider):
       refs.append(ref)        
       
       # get followings
-      payload = {'oauth_token': self.auth_token, 'limit' : limit}
-      r =requests.get(sc_api + '/users/' + str(userid) + '/followings', params=payload, timeout=10)
-      logger.info("Loading followings for user " + str(userid))
+      payload = {'client_id': self.clientId, 'limit' : limit}
+      r =requests.get(sc_api + '/users/' + self.userId + '/followings', params=payload, timeout=10)
+      logger.info("Loading followings for user " + self.userId)
       jsono = json.loads(r.text)
+      
+
       for follow in jsono['collection']:
         followingUri = scs_uri_user + str(follow['id'])
         ref = Ref.album(name=follow['username'], uri=followingUri)
@@ -99,27 +111,39 @@ class SoundcloudSimpleLibrary(LibraryProvider):
         self.imageCache[followingUri] = Image(uri=imguri)
         refs.append(ref)
       self.refCache[scs_uri_root] = refs
-      return refs      
-      
-    def loadTrackRefsFromStream(self):
-      refs=[]
-      payload = {'limit': limit, 'oauth_token': self.auth_token}
-      r =requests.get(sc_api + '/stream', params=payload, timeout=10)
-      logger.info("Loading stream")
-      jsono = json.loads(r.text)
-      trackNo = 0
-      for p in jsono['collection']:
-        if 'track' in p:
-          trackNo += 1
-          trackJSON = p['track']
-          audioStreamUrl = self.getMediaFromJSON(trackJSON['media'])
-          trackRef = Ref.track(name=trackJSON['title'], uri=scs_uri_stream + audioStreamUrl)          
-          refs.append(trackRef)
-          track = self.getTrackFromJSON(trackJSON, trackNo, trackRef.uri)
-          self.trackCache[trackRef.uri] = track
-      self.refCache[scs_uri_stream] = refs
       return refs
-    
+
+    def loadTrackRefsFromStream(self):
+      # get a copy of all our track ref's
+      refsCopy=[]
+      rootRefs = self.browse(scs_uri_root)
+      for rootRef in rootRefs:
+        if rootRef.uri != scs_uri_stream:
+          userTrackRefs = self.browse(rootRef.uri)
+          refsCopy = refsCopy + userTrackRefs
+
+      # sort this copy by date
+      refsCopy.sort(key=lambda x: self.trackCache[x.uri].date, reverse=True)
+      refs=[]
+      trackNo = 0
+      for ref in refsCopy:
+        originalUri = ref.uri
+        newUri = scs_uri_stream + originalUri.lstrip(scs_uri)
+        streamTrackRef = Ref.track(name=ref.name, uri=newUri)
+        refs.append(streamTrackRef)
+        # copy the Track with new URI and with new naming
+        trackNo += 1        
+        originalTrack = self.trackCache[originalUri]
+        newName = str(trackNo).zfill(2) + ". " + originalTrack.name[4:]
+        track=Track(uri=newUri,name=newName,album=originalTrack.album,artists=originalTrack.artists,length=originalTrack.length,date=originalTrack.date)
+        self.trackCache[newUri] = track
+        # copy the image
+        if originalUri in self.imageCache:
+          self.imageCache[newUri] = self.imageCache[originalUri]
+      
+      # lets limit to 99 tracks. Should be enough
+      return refs[:99]
+  
     def loadTrackRefsFromUser(self, uri):
       userid = uri.strip(scs_uri_user)
       refs=[]
@@ -155,13 +179,21 @@ class SoundcloudSimpleLibrary(LibraryProvider):
         artwork = artwork.replace("large.jpg", imageSelector)
         self.imageCache[trackuri] = Image(uri=artwork)
       album = Album(name=trackJSON['user']['username'])
-      artist = Artist(uri='none',name=trackJSON['user']['username'])
-      track=Track(uri=trackuri,name=str(trackNo).zfill(2) + '. ' + trackJSON['title'],album=album,artists=[artist],length=trackJSON['duration'],track_no=trackNo)
+      artist = Artist(uri='none',name=trackJSON['user']['username'])      
+      dateString = trackJSON['created_at']
+      # date information in JSON: "created_at":"2012-06-25T12:03:44Z"
+      dateObj = datetime.strptime(dateString, '%Y-%m-%dT%H:%M:%SZ')
+      dateStringMop = dateObj.strftime("%Y-%m-%d")
+      track=Track(uri=trackuri,name=str(trackNo).zfill(2) + '. ' + trackJSON['title'],album=album,artists=[artist],date=dateStringMop,length=trackJSON['duration'],track_no=trackNo)
       return track      
       
     def refresh(self, uri):
       logger.info("refreshing for uri: " + uri)
-      self.refCache[uri] = None
+      if uri == '':
+        # we need to flush everything
+        self.refCache = {}
+      else:
+        self.refCache[uri] = None
       return
 
     def lookup(self, uri, uris=None):

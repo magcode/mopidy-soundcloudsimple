@@ -23,9 +23,9 @@ class Extension(ext.Extension):
         schema = super().get_config_schema()
         schema["auth_token"] = config.Secret()
         schema["client_id"] = config.Secret()
+        schema["user_id"] = config.Secret()
         return schema
 
     def setup(self, registry):
         from .backend import SoundcloudSimpleBackend
         registry.add("backend", SoundcloudSimpleBackend)
-
