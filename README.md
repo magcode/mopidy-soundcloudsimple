@@ -28,7 +28,6 @@ The user_id is your soundcloud userID. The easiest way to get it is calling [vie
 ```
 [soundcloudsimple]
 enabled = true
-auth_token = <your personal auth_token>
 client_id = <your client_id>
 user_id = <your user_id>
 ```
