@@ -21,8 +21,6 @@ rm -rf ~/mopidy-soundcloudsimple
 
 # configuration in mopidy.conf
 
-~You need an `auth_token`. Easiest way is to use the guide from the [original SoundCloud extension](https://mopidy.com/ext/soundcloud/)~
-
 You need a `client_id` which you can get from [SoundCloud](https://soundcloud.com/you/apps). You may also look around and use an existing one.
 
 The user_id is your soundcloud userID. The easiest way to get it is calling [view-source:https://soundcloud.com/stream](https://soundcloud.com/stream) and search for `soundcloud:users:`
